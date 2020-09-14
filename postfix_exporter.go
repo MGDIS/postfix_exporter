@@ -70,6 +70,7 @@ type PostfixExporter struct {
 	unsupportedLogEntries           *prometheus.CounterVec
 	smtpStatusDeferred              prometheus.Counter
 	smtpStatusBounced               prometheus.Counter
+	smtpStatusSent                  prometheus.Counter
 	opendkimSignatureAdded          *prometheus.CounterVec
 }
 
@@ -284,6 +285,7 @@ var (
 	qmgrInsertLine                      = regexp.MustCompile(`:.*, size=(\d+), nrcpt=(\d+) `)
 	smtpStatusDeferredLine              = regexp.MustCompile(`, status=deferred`)
 	smtpStatusBouncedLine               = regexp.MustCompile(`, status=bounced`)
+	smtpStatusSentLine                  = regexp.MustCompile(`, status=sent`)
 	smtpTLSLine                         = regexp.MustCompile(`^(\S+) TLS connection established to \S+: (\S+) with cipher (\S+) \((\d+)/(\d+) bits\)`)
 	smtpConnectionTimedOut              = regexp.MustCompile(`^connect\s+to\s+(.*)\[(.*)\]:(\d+):\s+(Connection timed out)$`)
 	smtpdFCrDNSErrorsLine               = regexp.MustCompile(`^warning: hostname \S+ does not resolve to address `)
@@ -358,6 +360,9 @@ func (e *PostfixExporter) CollectFromLogLine(line string) {
 				}
 				if smtpMatches := smtpStatusBouncedLine.FindStringSubmatch(remainder); smtpMatches != nil {
 					e.smtpStatusBounced.Inc()
+				}
+				if smtpMatches := smtpStatusSentLine.FindStringSubmatch(remainder); smtpMatches != nil {
+					e.smtpStatusSent.Inc()
 				}
 			} else if smtpTLSMatches := smtpTLSLine.FindStringSubmatch(remainder); smtpTLSMatches != nil {
 				e.smtpTLSConnects.WithLabelValues(smtpTLSMatches[1:]...).Inc()
@@ -607,6 +612,11 @@ func NewPostfixExporter(showqPath string, logfilePath string, journal *Journal, 
 			Name:      "smtp_status_bounced",
 			Help:      "Total number of messages bounced.",
 		}),
+		smtpStatusSent: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "postfix",
+			Name:      "smtp_status_sent",
+			Help:      "Total number of messages sent.",
+		}),
 		opendkimSignatureAdded: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "opendkim",
@@ -646,6 +656,7 @@ func (e *PostfixExporter) Describe(ch chan<- *prometheus.Desc) {
 	e.smtpdTLSConnects.Describe(ch)
 	ch <- e.smtpStatusDeferred.Desc()
 	ch <- e.smtpStatusBounced.Desc()
+	ch <- e.smtpStatusSent.Desc()
 	e.unsupportedLogEntries.Describe(ch)
 	e.smtpConnectionTimedOut.Describe(ch)
 	e.opendkimSignatureAdded.Describe(ch)
@@ -735,6 +746,7 @@ func (e *PostfixExporter) Collect(ch chan<- prometheus.Metric) {
 	e.smtpdTLSConnects.Collect(ch)
 	ch <- e.smtpStatusDeferred
 	ch <- e.smtpStatusBounced
+	ch <- e.smtpStatusSent
 	e.unsupportedLogEntries.Collect(ch)
 	ch <- e.smtpConnectionTimedOut
 	e.opendkimSignatureAdded.Collect(ch)
